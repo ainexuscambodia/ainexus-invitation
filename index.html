@@ -43,7 +43,7 @@ html, body { height: 100%; }
 body { background: var(--night); color: var(--text); font-family: var(--body); font-size: 16px; line-height: 1.5;
   overflow: hidden; font-variant-numeric: lining-nums; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
 .foil { background: var(--foil); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; }
-.shine { animation: shimmer 8s linear infinite; }
+.shine { background-position: 30% 0; }
 @keyframes shimmer { from { background-position: 0% 0 } to { background-position: -200% 0 } }
 
 /* ---------- Stage ---------- */
@@ -80,7 +80,8 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
 }
 .book::after { content: ""; position: absolute; left: 8%; right: 8%; bottom: -22px; height: 26px; z-index: -1; pointer-events: none;
   background: radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.6), transparent 70%); }
-.leaf { position: absolute; inset: 0; transform-origin: left center; transform-style: preserve-3d; transition: transform .8s cubic-bezier(.3,.7,.25,1); will-change: transform; }
+.leaf { position: absolute; inset: 0; transform-origin: left center; transform-style: preserve-3d; transition: transform .65s cubic-bezier(.3,.7,.25,1); }
+.leaf.moving, .leaf.dragging { will-change: transform; }
 .leaf.dragging { transition: none; }
 .leaf.gone { visibility: hidden; }
 .face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; overflow: hidden;
@@ -405,14 +406,14 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
 (function () {
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  /* ---------- Light gold network (capped at ~30 fps, paused when hidden) ---------- */
-  var app = document.getElementById('app'), cv = document.getElementById('net'), g = cv.getContext('2d');
-  var W = 0, H = 0, pts = [], last = 0, live = true;
+  /* ---------- Light gold network (~20 fps, 1x resolution, paused while a page turns or the tab is hidden) ---------- */
+  var app = document.getElementById('app'), cv = document.getElementById('net'), g = cv.getContext('2d', { alpha: true });
+  var W = 0, H = 0, pts = [], last = 0, live = true, pausedUntil = 0;
+  function pauseNet(ms) { pausedUntil = Math.max(pausedUntil, performance.now() + ms); }
   function size() {
-    var dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     W = app.clientWidth; H = app.clientHeight;
-    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    var n = Math.max(18, Math.min(W < 700 ? 34 : 60, Math.round(W * H / 22000))); pts = [];
+    cv.width = W; cv.height = H; // 1x pixels: the dots are soft anyway, and big/retina screens stay cheap
+    var n = Math.max(18, Math.min(W < 700 ? 30 : 42, Math.round(W * H / 30000))); pts = [];
     for (var i = 0; i < n; i++) pts.push({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - .5) * .4, vy: (Math.random() - .5) * .4, r: Math.random() * 1.4 + .7 });
     paint();
   }
@@ -433,7 +434,7 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
   function loop(t) {
     if (!live) return;
     requestAnimationFrame(loop);
-    if (t - last < 33) return; last = t;
+    if (t - last < 50 || t < pausedUntil) return; last = t;
     for (var i = 0; i < pts.length; i++) {
       var a = pts[i]; a.x += a.vx; a.y += a.vy;
       if (a.x < -10) a.x = W + 10; else if (a.x > W + 10) a.x = -10;
@@ -453,7 +454,7 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
   var book = document.getElementById('book');
   var leaves = Array.prototype.slice.call(book.querySelectorAll('.leaf'));
   leaves.forEach(function (l) { var s = document.createElement('div'); s.className = 'shade'; l.appendChild(s); l._shade = s; });
-  var N = leaves.length, MAX = N - 1, idx = 0, DUR = reduce ? 20 : 820, timers = [];
+  var N = leaves.length, MAX = N - 1, idx = 0, DUR = reduce ? 20 : 680, timers = [];
   var countEl = document.getElementById('count'), prevBtn = document.getElementById('prevBtn'), nextBtn = document.getElementById('nextBtn');
   var dots = document.getElementById('dots');
   for (var i = 0; i < N; i++) dots.appendChild(document.createElement('i'));
@@ -468,7 +469,8 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
       var flipped = i < idx;
       l.style.zIndex = flipped ? i + 1 : 2 * N - i;
       if (!l.classList.contains('dragging')) setAngle(l, flipped ? -180 : 0);
-      l.classList.toggle('gone', flipped);
+      l.classList.toggle('gone', flipped || i > idx + 1); // only the open page and the one under it are drawn
+      l.classList.remove('moving');
       l.inert = i !== idx;
       l.setAttribute('aria-hidden', i === idx ? 'false' : 'true');
     });
@@ -479,9 +481,11 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
     var target = dir > 0 ? idx : idx - 1;
     if (target < 0 || (dir > 0 && idx >= MAX)) return;
     var leaf = leaves[target];
-    leaf.classList.remove('gone'); leaf.style.zIndex = 3 * N + target;
+    leaf.classList.remove('gone'); leaf.classList.add('moving'); leaf.style.zIndex = 3 * N + target;
     if (dir < 0) setAngle(leaf, -180);
     idx += dir;
+    [idx, idx + 1].forEach(function (k) { if (leaves[k]) leaves[k].classList.remove('gone'); });
+    pauseNet(DUR + 50);
     leaf.getBoundingClientRect(); // commit the start angle before animating
     requestAnimationFrame(function () { setAngle(leaf, dir > 0 ? -180 : 0); });
     chrome(); settleLater();
@@ -508,6 +512,7 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
       try { book.setPointerCapture(drag.id); } catch (err) {}
       drag.leaf.classList.remove('gone'); drag.leaf.classList.add('dragging'); drag.leaf.style.zIndex = 4 * N;
     }
+    pauseNet(300);
     var p = Math.max(-1, Math.min(1, dx / (drag.w * .9)));
     drag.a = drag.mode === 'next' ? Math.max(-180, Math.min(0, p * 180)) : Math.max(-180, Math.min(0, -180 + p * 180));
     setAngle(drag.leaf, drag.a);
