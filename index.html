@@ -149,7 +149,7 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
 .closing .orn { color: var(--gold-ink); }
 
 @media (max-width: 600px) {
-  .brand .long, #soundTxt { display: none; }
+  .brand .long { display: none; }
   .icon-btn { padding: 8px 12px; }
   .frame { inset: 14px 14px 14px 24px; }
 }
@@ -165,11 +165,6 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
   <div class="bar">
     <span class="brand"><b>AI Nexus</b><span class="long"> Cambodia × <b>NEXJARVIS</b> Global</span></span>
     <span class="count" id="count" aria-live="polite">Cover</span>
-    <button class="icon-btn" type="button" id="soundBtn" aria-pressed="true" aria-label="Page-turn sound">
-      <svg id="soundOn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
-      <svg id="soundOff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" hidden><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>
-      <span id="soundTxt">Sound on</span>
-    </button>
   </div>
 
   <main class="stage">
@@ -454,49 +449,6 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
     if (live && !reduce) requestAnimationFrame(loop);
   });
 
-  /* ---------- Page-turn sound (synthesised paper, buffers made once) ---------- */
-  var actx = null, swish = null, slap = null, soundOn = true;
-  try { soundOn = localStorage.getItem('inviteSound') !== 'off'; } catch (e) {}
-  function makeNoise(c, dur) {
-    var len = Math.floor(c.sampleRate * dur), buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0), grain = 1;
-    for (var i = 0; i < len; i++) {
-      if (i % 64 === 0) grain = .45 + Math.random() * .55;
-      d[i] = (Math.random() * 2 - 1) * grain + (Math.random() < .004 ? (Math.random() * 2 - 1) * 2.2 : 0);
-    }
-    return buf;
-  }
-  function ctx() {
-    try {
-      if (!actx) {
-        var A = window.AudioContext || window.webkitAudioContext; if (!A) return null;
-        actx = new A(); swish = makeNoise(actx, .8); slap = makeNoise(actx, .15);
-      }
-      if (actx.state === 'suspended') actx.resume();
-    } catch (e) { return null; }
-    return actx;
-  }
-  function flipSound(heavy) {
-    if (!soundOn) return;
-    var c = ctx(); if (!c) return;
-    var t = c.currentTime + .01, dur = heavy ? .72 : .6;
-    var s = c.createBufferSource(); s.buffer = swish;
-    var bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = .9;
-    bp.frequency.setValueAtTime(heavy ? 2600 : 3800, t); bp.frequency.exponentialRampToValueAtTime(heavy ? 600 : 900, t + dur);
-    var hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = heavy ? 200 : 350;
-    var gn = c.createGain();
-    gn.gain.setValueAtTime(.0001, t); gn.gain.exponentialRampToValueAtTime(.35, t + .05);
-    gn.gain.exponentialRampToValueAtTime(.14, t + dur * .45); gn.gain.exponentialRampToValueAtTime(.5, t + dur * .82); gn.gain.exponentialRampToValueAtTime(.0001, t + dur);
-    s.connect(bp); bp.connect(hp); hp.connect(gn); gn.connect(c.destination); s.start(t); s.stop(t + dur + .02);
-    var t2 = t + dur * .8;
-    var s2 = c.createBufferSource(); s2.buffer = slap;
-    var f2 = c.createBiquadFilter(); f2.type = 'lowpass'; f2.frequency.value = heavy ? 1600 : 2600;
-    var g2 = c.createGain(); g2.gain.setValueAtTime(.0001, t2); g2.gain.exponentialRampToValueAtTime(.45, t2 + .008); g2.gain.exponentialRampToValueAtTime(.0001, t2 + .11);
-    s2.connect(f2); f2.connect(g2); g2.connect(c.destination); s2.start(t2); s2.stop(t2 + .13);
-    var o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(heavy ? 110 : 140, t2); o.frequency.exponentialRampToValueAtTime(55, t2 + .1);
-    var g3 = c.createGain(); g3.gain.setValueAtTime(.0001, t2); g3.gain.exponentialRampToValueAtTime(heavy ? .3 : .18, t2 + .01); g3.gain.exponentialRampToValueAtTime(.0001, t2 + .12);
-    o.connect(g3); g3.connect(c.destination); o.start(t2); o.stop(t2 + .14);
-  }
-
   /* ---------- Book: one page at a time ---------- */
   var book = document.getElementById('book');
   var leaves = Array.prototype.slice.call(book.querySelectorAll('.leaf'));
@@ -529,7 +481,6 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
     var leaf = leaves[target];
     leaf.classList.remove('gone'); leaf.style.zIndex = 3 * N + target;
     if (dir < 0) setAngle(leaf, -180);
-    flipSound(target === 0 || target === MAX - 1);
     idx += dir;
     leaf.getBoundingClientRect(); // commit the start angle before animating
     requestAnimationFrame(function () { setAngle(leaf, dir > 0 ? -180 : 0); });
@@ -543,7 +494,6 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
   var drag = null;
   book.addEventListener('pointerdown', function (e) {
     if (e.button > 0 || e.target.closest('a,button')) return;
-    ctx();
     drag = { x: e.clientX, y: e.clientY, mode: null, leaf: null, a: 0, w: book.clientWidth, t: Date.now(), id: e.pointerId };
   });
   book.addEventListener('pointermove', function (e) {
@@ -572,35 +522,27 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
     d.leaf.classList.remove('dragging');
     var fast = Date.now() - d.t < 260;
     if (d.mode === 'next') {
-      if (d.a < -40 || fast) { flipSound(idx === 0 || idx === MAX - 1); idx += 1; setAngle(d.leaf, -180); chrome(); settleLater(); }
+      if (d.a < -40 || fast) { idx += 1; setAngle(d.leaf, -180); chrome(); settleLater(); }
       else { setAngle(d.leaf, 0); settleLater(); }
     } else {
-      if (d.a > -140 || fast) { idx -= 1; flipSound(idx === 0 || idx === MAX - 1); setAngle(d.leaf, 0); chrome(); settleLater(); }
+      if (d.a > -140 || fast) { idx -= 1; setAngle(d.leaf, 0); chrome(); settleLater(); }
       else { setAngle(d.leaf, -180); settleLater(); }
     }
   }
   book.addEventListener('pointerup', endDrag);
   book.addEventListener('pointercancel', function () { if (drag && drag.leaf) drag.leaf.classList.remove('dragging'); drag = null; layout(); });
 
-  prevBtn.addEventListener('click', function () { ctx(); go(-1); });
-  nextBtn.addEventListener('click', function () { ctx(); go(1); });
+  prevBtn.addEventListener('click', function () { go(-1); });
+  nextBtn.addEventListener('click', function () { go(1); });
   Array.prototype.forEach.call(document.querySelectorAll('[data-go]'), function (b) {
-    b.addEventListener('click', function () { ctx(); goTo(+b.getAttribute('data-go')); });
+    b.addEventListener('click', function () { goTo(+b.getAttribute('data-go')); });
   });
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); ctx(); go(1); }
-    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { ctx(); go(-1); }
-    else if (e.key === 'Home') { ctx(); goTo(0); }
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); go(1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { go(-1); }
+    else if (e.key === 'Home') { goTo(0); }
   });
 
-  var sBtn = document.getElementById('soundBtn');
-  function paintSound() {
-    sBtn.setAttribute('aria-pressed', soundOn ? 'true' : 'false');
-    document.getElementById('soundOn').hidden = !soundOn; document.getElementById('soundOff').hidden = soundOn;
-    document.getElementById('soundTxt').textContent = soundOn ? 'Sound on' : 'Sound off';
-  }
-  sBtn.addEventListener('click', function () { soundOn = !soundOn; paintSound(); if (soundOn) ctx(); try { localStorage.setItem('inviteSound', soundOn ? 'on' : 'off'); } catch (e) {} });
-  paintSound();
   layout();
 })();
 </script>
