@@ -80,10 +80,29 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
 }
 .book::after { content: ""; position: absolute; left: 8%; right: 8%; bottom: -22px; height: 26px; z-index: -1; pointer-events: none;
   background: radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.6), transparent 70%); }
-.leaf { position: absolute; inset: 0; transform-origin: left center; transform-style: preserve-3d; transition: transform .65s cubic-bezier(.3,.7,.25,1); }
+.leaf { position: absolute; inset: 0; z-index: 1; transform-origin: left center; transform-style: preserve-3d;
+  transition: transform .65s cubic-bezier(.3,.7,.25,1), visibility 0s; }
+/* Fades go on the page surfaces, never on the leaf: opacity on a 3D leaf would flatten it and show mirrored text. */
+.leaf > .face { transition: opacity .28s ease; }
+
+/* Page-block edges: turned pages stack on the left, unread pages on the right. They stay put, so nothing pops in or out. */
+.book { --emax: 11px; --estep: 1.3px; }
+@media (min-width: 700px) { .book { --emax: 22px; --estep: 2.4px; } }
+.edge { position: absolute; top: 5px; bottom: 5px; z-index: 0; pointer-events: none;
+  background:
+    linear-gradient(var(--edge-dir, 90deg), rgba(0,0,0,.28), rgba(0,0,0,0) 70%),
+    repeating-linear-gradient(90deg, #d8cfbb 0 1px, #f5f0e4 1px 2.6px);
+  box-shadow: 0 18px 30px -18px rgba(0,0,0,.75);
+  transition: width .45s cubic-bezier(.3,.7,.25,1), opacity .3s ease; }
+.edge-l { right: calc(100% - 1px); border-radius: 7px 0 0 7px; width: calc(min(var(--emax), 3px + var(--done, 0) * var(--estep))); }
+.edge-r { left: calc(100% - 1px); border-radius: 0 7px 7px 0; --edge-dir: 270deg; width: calc(min(var(--emax), 3px + var(--rest, 10) * var(--estep))); }
+.book:not(.opened) .edge-l, .book.at-end .edge-r { width: 0; opacity: 0; }
 .leaf.moving, .leaf.dragging { will-change: transform; }
 .leaf.dragging { transition: none; }
-.leaf.gone { visibility: hidden; }
+/* A page being turned melts into the left stack during the second half of its turn, so it never lies open on its own. */
+.leaf.fadeout > .face { opacity: 0; transition: opacity .3s ease .3s; }
+.leaf.gone { visibility: hidden; transition: transform .65s cubic-bezier(.3,.7,.25,1), visibility 0s .3s; }
+.leaf.gone > .face { opacity: 0; }
 .face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; overflow: hidden;
   background: var(--paper); color: var(--ink); border-radius: 3px 12px 12px 3px; box-shadow: 0 26px 50px -22px rgba(0,0,0,.8); }
 .face::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 30px; pointer-events: none; z-index: 2; background: linear-gradient(to right, rgba(0,0,0,.14), rgba(0,0,0,0)); }
@@ -170,6 +189,8 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
 
   <main class="stage">
     <div class="book" id="book" aria-label="Invitation and program book">
+      <div class="edge edge-l" aria-hidden="true"></div>
+      <div class="edge edge-r" aria-hidden="true"></div>
 
       <!-- Cover -->
       <section class="leaf" data-name="Cover">
@@ -462,6 +483,8 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
   function setAngle(leaf, a) { leaf.style.transform = a ? 'rotateY(' + a + 'deg)' : ''; leaf._shade.style.opacity = Math.sin(Math.abs(a) * Math.PI / 180).toFixed(2); }
   function chrome() {
     countEl.textContent = label(); prevBtn.disabled = idx === 0; nextBtn.disabled = idx === MAX;
+    book.style.setProperty('--done', idx); book.style.setProperty('--rest', MAX - idx);
+    book.classList.toggle('opened', idx > 0); book.classList.toggle('at-end', idx === MAX);
     Array.prototype.forEach.call(dots.children, function (d, i) { d.classList.toggle('on', i === idx); });
   }
   function layout() {
@@ -470,7 +493,7 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
       l.style.zIndex = flipped ? i + 1 : 2 * N - i;
       if (!l.classList.contains('dragging')) setAngle(l, flipped ? -180 : 0);
       l.classList.toggle('gone', flipped || i > idx + 1); // only the open page and the one under it are drawn
-      l.classList.remove('moving');
+      l.classList.remove('moving', 'fadeout');
       l.inert = i !== idx;
       l.setAttribute('aria-hidden', i === idx ? 'false' : 'true');
     });
@@ -481,13 +504,13 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
     var target = dir > 0 ? idx : idx - 1;
     if (target < 0 || (dir > 0 && idx >= MAX)) return;
     var leaf = leaves[target];
-    leaf.classList.remove('gone'); leaf.classList.add('moving'); leaf.style.zIndex = 3 * N + target;
+    leaf.classList.remove('gone', 'fadeout'); leaf.classList.add('moving'); leaf.style.zIndex = 3 * N + target;
     if (dir < 0) setAngle(leaf, -180);
     idx += dir;
     [idx, idx + 1].forEach(function (k) { if (leaves[k]) leaves[k].classList.remove('gone'); });
     pauseNet(DUR + 50);
     leaf.getBoundingClientRect(); // commit the start angle before animating
-    requestAnimationFrame(function () { setAngle(leaf, dir > 0 ? -180 : 0); });
+    requestAnimationFrame(function () { setAngle(leaf, dir > 0 ? -180 : 0); if (dir > 0) leaf.classList.add('fadeout'); });
     chrome(); settleLater();
   }
   function goTo(n) {
@@ -527,7 +550,7 @@ body { background: var(--night); color: var(--text); font-family: var(--body); f
     d.leaf.classList.remove('dragging');
     var fast = Date.now() - d.t < 260;
     if (d.mode === 'next') {
-      if (d.a < -40 || fast) { idx += 1; setAngle(d.leaf, -180); chrome(); settleLater(); }
+      if (d.a < -40 || fast) { idx += 1; setAngle(d.leaf, -180); d.leaf.classList.add('fadeout'); chrome(); settleLater(); }
       else { setAngle(d.leaf, 0); settleLater(); }
     } else {
       if (d.a > -140 || fast) { idx -= 1; setAngle(d.leaf, 0); chrome(); settleLater(); }
